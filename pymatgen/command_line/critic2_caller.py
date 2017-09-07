@@ -200,10 +200,6 @@ class Critic2Caller:
 
             self.output = Critic2Output(structure, stdout)
 
-    @property
-    def connected_structure(self):
-        return self.output.structure_graph
-
     @classmethod
     def from_path(cls, path, suffix=''):
         """

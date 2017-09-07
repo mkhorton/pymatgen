@@ -483,18 +483,14 @@ class StructureGraph(MSONable):
         Replicates the graph, creating a supercell,
         intelligently joining together
         edges that lie on periodic boundaries.
-
         In principle, any operations on the expanded
         graph could also be done on the original
         graph, but a larger graph can be easier to
         visualize and reason about.
-
         :param scaling_matrix: same as Structure.__mul__
         :return:
         """
 
-        # TODO: tests for 3D structures (seems to work for cubic, but want to make sure)
-        
         # Developer note: a different approach was also trialed, using
         # a simple Graph (instead of MultiDiGraph), with node indices
         # representing both site index and periodic image. Here, the
@@ -502,12 +498,24 @@ class StructureGraph(MSONable):
         # approach has many benefits, but made it more difficult to
         # keep the graph in sync with its corresponding Structure.
 
+        # Broadly, it would be easier to multiply the Structure
+        # *before* generating the StructureGraph, but this isn't
+        # possible when generating the graph using critic2 from
+        # charge density.
+
+        # Multiplication works by looking for the expected position
+        # of an image node, and seeing if that node exists in the
+        # supercell. If it does, the edge is updated. This is more
+        # computationally expensive than just keeping track of the
+        # which new lattice images present, but should hopefully be
+        # easier to extend to a general 3x3 scaling matrix.
+
         # code adapted from Structure.__mul__
         scale_matrix = np.array(scaling_matrix, np.int16)
         if scale_matrix.shape != (3, 3):
             scale_matrix = np.array(scale_matrix * np.eye(3), np.int16)
         else:
-            # TODO: test __mul__ with full 3x3 scaling matrices 
+            # TODO: test __mul__ with full 3x3 scaling matrices
             raise NotImplementedError('Not tested with 3x3 scaling matrices yet.')
         new_lattice = Lattice(np.dot(scale_matrix, self.structure.lattice.matrix))
 
@@ -543,17 +551,16 @@ class StructureGraph(MSONable):
 
         # list of new edges inside supercell
         # for duplicate checking
-        edges_inside_supercell = []  # sets of {u, v}
-        for u, v, k, d in new_g.edges(keys=True, data=True):
-            if d['to_jimage'] == (0, 0, 0):
-                edges_inside_supercell.append({u, v})
+        edges_inside_supercell = [{u, v} for u, v, d in new_g.edges(data=True)
+                                  if d['to_jimage'] == (0, 0, 0)]
 
         orig_lattice = self.structure.lattice
 
         # use k-d tree to match given position to an
         # existing Site in Structure
         kd_tree = KDTree(new_structure.cart_coords)
-        # tolerance for sites to be considered equal
+
+        # tolerance in Å for sites to be considered equal
         # this could probably be a lot smaller
         tol = 0.05
 
@@ -569,20 +576,20 @@ class StructureGraph(MSONable):
                 # lattice (keeping original lattice has
                 # significant benefits)
                 v_image_frac = np.add(orig_frac_coords[v], to_jimage)
-                v_frac = orig_frac_coords[v]
+                u_frac = orig_frac_coords[u]
 
-                # using the position of node v as a reference,
+                # using the position of node u as a reference,
                 # get relative Cartesian co-ordinates of where
                 # atoms defined by edge are expected to be
                 v_image_cart = orig_lattice.get_cartesian_coords(v_image_frac)
-                v_cart = orig_lattice.get_cartesian_coords(v_frac)
-                v_rel = np.subtract(v_image_cart, v_cart)
+                u_cart = orig_lattice.get_cartesian_coords(u_frac)
+                v_rel = np.subtract(v_image_cart, u_cart)
 
                 # now retrieve position of node v in
                 # new supercell, and get absolute Cartesian
                 # co-ordinates of where atoms defined by edge
                 # are expected to be
-                v_expec = new_structure[v].coords + v_rel
+                v_expec = new_structure[u].coords + v_rel
 
                 # now search in new structure for these atoms
                 # (these lines could/should be optimized)
@@ -606,24 +613,40 @@ class StructureGraph(MSONable):
                     # make sure we don't try to add duplicate edges
                     # will remove two edges for everyone one we add
                     if {new_u, new_v} not in edges_inside_supercell:
+
+                        # normalize direction
+                        if new_v < new_u:
+                            new_u, new_v = new_v, new_u
+
                         edges_inside_supercell.append({new_u, new_v})
                         edges_to_add.append((new_u, new_v, new_d))
 
                 else:
 
-                        # want to find new_v such that we have
-                        # full periodic boundary conditions
-                        # so that nodes on one side of supercell
-                        # are connected to nodes on opposite side
+                    # want to find new_v such that we have
+                    # full periodic boundary conditions
+                    # so that nodes on one side of supercell
+                    # are connected to nodes on opposite side
 
-                        shift = new_structure.lattice.get_cartesian_coords(to_jimage)
-                        v_expec = v_expec - shift
-                        v_present = kd_tree.query(v_expec)
-                        v_present = v_present[1] if v_present[0] <= tol else None
+                    v_expec_frac = new_structure.lattice.get_fractional_coords(v_expec)
+                    v_expec_frac = np.subtract(v_expec_frac, to_jimage)
+                    v_expec = new_structure.lattice.get_cartesian_coords(v_expec_frac)
+                    v_present = kd_tree.query(v_expec)
+                    v_present = v_present[1] if v_present[0] <= tol else None
 
-                        if v_present is not None and v != v_present:
-                            edges_to_remove.append((u, v, k))
-                            edges_to_add.append((u, v_present, d.copy()))
+                    if v_present is not None and v != v_present:
+
+                        new_u = u
+                        new_v = v_present
+                        new_d = d.copy()
+
+                        # normalize direction
+                        if new_v < new_u:
+                            new_u, new_v = new_v, new_u
+                            new_d['to_jimage'] = tuple(np.multiply(-1, d['to_jimage']).astype(int))
+
+                        edges_to_remove.append((u, v, k))
+                        edges_to_add.append((new_u, new_v, new_d))
 
         logger.debug("Removing {} edges, adding {} new edges.".format(len(edges_to_remove),
                                                                       len(edges_to_add)))
@@ -715,6 +738,9 @@ class StructureGraph(MSONable):
         self.structure._sites = sorted(self.structure._sites, key=key, reverse=reverse)
         self.graph = nx.relabel_nodes(self.graph, mapping, copy=True)
 
+    def __copy__(self):
+        return StructureGraph.from_dict(self.as_dict())
+
     def __eq__(self, other):
         """
         Two StructureGraphs are equal if they have equal Structures,
@@ -725,11 +751,17 @@ class StructureGraph(MSONable):
         :return (bool):
         """
 
+        # sort to get consistent node labels
+        self_sorted = self.__copy__()
+        self_sorted.sort()
+        other_sorted = other.__copy__()
+        other_sorted.sort()
+
         edges = {(u, v, d['to_jimage'])
-                 for u, v, d in self.graph.edges(keys=False, data=True)}
+                 for u, v, d in self_sorted.graph.edges(keys=False, data=True)}
 
         edges_other = {(u, v, d['to_jimage'])
-                       for u, v, d in other.graph.edges(keys=False, data=True)}
+                       for u, v, d in other_sorted.graph.edges(keys=False, data=True)}
 
         return (self.structure == other.structure) and \
                (edges == edges_other)
@@ -745,9 +777,36 @@ class StructureGraph(MSONable):
         dissimilarity between two StructureGraphs (ignoring
         edge weights), and is defined by 1 - (size of the
         intersection / size of the union) of the sets of
-        edges.
+        edges. This is returned with key 'dist'.
 
         :param other: StructureGraph
         :return:
         """
-        return NotImplementedError
+
+        if self.structure != other.structure:
+            return ValueError("Meaningless to compare StructureGraphs if "
+                              "corresponding Structures are different.")
+
+        # sort to get consistent node labels
+        self_sorted = self.__copy__()
+        self_sorted.sort()
+        other_sorted = other.__copy__()
+        other_sorted.sort()
+
+        edges = {(u, v, d['to_jimage'])
+                 for u, v, d in self_sorted.graph.edges(keys=False, data=True)}
+
+        edges_other = {(u, v, d['to_jimage'])
+                       for u, v, d in other_sorted.graph.edges(keys=False, data=True)}
+
+        if len(edges) == 0 and len(edges_other) == 0:
+            jaccard_dist = 0  # by definition
+        else:
+            jaccard_dist = 1 - len(edges.intersection(edges_other)) / len(edges.union(edges_other))
+
+        return {
+            'self': edges - edges_other,
+            'other': edges_other - edges,
+            'both': edges.intersection(edges_other),
+            'dist': jaccard_dist
+        }

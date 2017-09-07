@@ -7,6 +7,7 @@ from __future__ import division, unicode_literals
 import unittest
 import os
 
+from pymatgen import MPRester
 from pymatgen import Structure, Lattice
 from pymatgen.command_line.critic2_caller import Critic2Output
 from pymatgen.analysis.graphs import *
@@ -66,6 +67,12 @@ class StructureGraphTest(unittest.TestCase):
                                              'test_files/critic2/MoS2.cif'))
         c2o = Critic2Output(self.structure, reference_stdout)
         self.mos2_sg = c2o.structure_graph(edge_weight="bond_length", edge_weight_units="Å")
+
+        latt = Lattice.cubic(4.17)
+        species = ["Ni", "O"]
+        coords = [[0, 0, 0],
+                  [0.5, 0.5, 0.5]]
+        self.NiO = Structure.from_spacegroup(225, latt, species, coords)
 
     def test_properties(self):
 
@@ -166,7 +173,7 @@ from    to  to_image
    0     0  (0, -1, 0)  
    0     1  (0, 0, 0)   
    0     1  (-1, 0, 0)  
-   1     0  (1, 0, 0)   
+   0     1  (-1, 0, 0)  
    1     1  (0, 1, 0)   
    1     1  (0, -1, 0)  
 """
@@ -190,27 +197,51 @@ from    to  to_image
         for idx in mos2_sg_mul.structure.indices_from_symbol("Mo"):
             self.assertEqual(mos2_sg_mul.get_coordination_of_site(idx), 6)
 
-        # TODO: robustly test full 3x3x3 scaling_matrix for multiplication
+        # TODO: these should be equivalent, investigate this
+        mos2_sg_premul = StructureGraph.with_local_env_strategy(self.structure*(3, 3, 1), MinimumDistanceNN())
+        # self.assertTrue(mos2_sg_mul == mos2_sg_premul)
+
+        # test 3D Structure
+
+        nio_sg = StructureGraph.with_local_env_strategy(self.NiO, MinimumDistanceNN())
+        nio_sg_prim = StructureGraph.with_local_env_strategy(self.NiO.get_primitive_structure(), MinimumDistanceNN())
+
+        nio_sg = nio_sg*3
+        nio_sg_prim = nio_sg*3
+
+        for n in range(len(nio_sg)):
+            self.assertEqual(nio_sg.get_coordination_of_site(n), 6)
+        for n in range(len(nio_sg_prim)):
+            self.assertEqual(nio_sg_prim.get_coordination_of_site(n), 6)
 
     @unittest.skipIf(not (which('neato') and which('fdp')), "graphviz executables not present")
     def test_draw(self):
 
+        # draw MoS2 graph
         self.mos2_sg.draw_graph_to_file('MoS2_single.pdf', image_labels=True, hide_image_edges=False)
         mos2_sg = self.mos2_sg * (9, 9, 1)
         mos2_sg.draw_graph_to_file('MoS2.pdf', algo='neato')
 
+        # draw MoS2 graph that's been successively multiplied
         mos2_sg_2 = self.mos2_sg * (3, 3, 1)
         mos2_sg_2 = mos2_sg_2 * (3, 3, 1)
         mos2_sg_2.draw_graph_to_file('MoS2_twice_mul.pdf', algo='neato', hide_image_edges=False)
 
+        # draw MoS2 graph that's generated from a pre-multiplied Structure
+        mos2_sg_premul = StructureGraph.with_local_env_strategy(self.structure*(3, 3, 1), MinimumDistanceNN())
+        mos2_sg_premul.draw_graph_to_file('MoS2_premul.pdf', algo='neato', hide_image_edges=True)
+
+        # draw graph for a square lattice
         self.square_sg.draw_graph_to_file('square_single.pdf', hide_image_edges=False)
         square_sg = self.square_sg * (5, 5, 1)
         square_sg.draw_graph_to_file('square.pdf', algo='neato', image_labels=True, node_labels=False)
 
+        # draw graph for a body-centered square lattice
         self.bc_square_sg.draw_graph_to_file('bc_square_single.pdf', hide_image_edges=False)
         bc_square_sg = self.bc_square_sg * (9, 9, 1)
         bc_square_sg.draw_graph_to_file('bc_square.pdf', algo='neato', image_labels=False)
 
+        # draw graph for a body-centered square lattice defined in an alternative way
         self.bc_square_sg_r.draw_graph_to_file('bc_square_r_single.pdf', hide_image_edges=False)
         bc_square_sg_r = self.bc_square_sg_r * (9, 9, 1)
         bc_square_sg_r.draw_graph_to_file('bc_square_r.pdf', algo='neato', image_labels=False)
@@ -221,7 +252,7 @@ from    to  to_image
         d2 = sg.as_dict()
         self.assertDictEqual(d, d2)
 
-    def test_from_local_env_and_equality(self):
+    def test_from_local_env_and_equality_and_diff(self):
         nn = MinimumDistanceNN()
         sg = StructureGraph.with_local_env_strategy(self.structure, nn)
         
@@ -232,6 +263,10 @@ from    to  to_image
 
         self.assertTrue(sg == sg2)
         self.assertTrue(sg == self.mos2_sg)
+
+        # TODO: find better test case where graphs are different
+        diff = sg.diff(sg2)
+        self.assertEqual(diff['dist'], 0)
 
 if __name__ == "__main__":
     unittest.main()
