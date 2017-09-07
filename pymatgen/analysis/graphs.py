@@ -279,10 +279,11 @@ class StructureGraph(MSONable):
         """
         ConnectedSite = namedtuple('ConnectedSite', 'periodic_site, jimage, index, weight')
         connected_sites = []
-        edges = self.graph.out_edges(n, data=True) + self.graph.in_edges(n, data=True)
-        for u, v, d in edges:
+        out_edges = self.graph.out_edges(n, data=True)
+        in_edges = [(v, u, d) for u, v, d in self.graph.in_edges(n, data=True)]
+        for u, v, d in out_edges + in_edges:
 
-            site_d = self.structure[u].as_dict()
+            site_d = self.structure[v].as_dict()
             site_d['abc'] = np.add(site_d['abc'], d['to_jimage']).tolist()
             to_jimage = tuple(map(int, np.add(d['to_jimage'], jimage)))
             periodic_site = PeriodicSite.from_dict(site_d)
@@ -291,7 +292,7 @@ class StructureGraph(MSONable):
 
             connected_site = ConnectedSite(periodic_site=periodic_site,
                                            jimage=to_jimage,
-                                           index=u,
+                                           index=v,
                                            weight=weight)
 
             connected_sites.append(connected_site)
