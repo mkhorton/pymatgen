@@ -74,6 +74,9 @@ class StructureGraphTest(unittest.TestCase):
                   [0.5, 0.5, 0.5]]
         self.NiO = Structure.from_spacegroup(225, latt, species, coords)
 
+        from pymatgen import MPRester
+        self.NiO = MPRester().get_structures('NiO')[0]
+
     def test_properties(self):
 
         self.assertEqual(self.mos2_sg.name, "bonds")
@@ -137,13 +140,13 @@ Sites (3)
   2  S     0.666667  0.333333  0.123562
 Graph: bonds
 from    to  to_image      bond_length (A)
-----  ----  ------------  ---------------
-   0     1  (-1, 0, 0)    2.4169E+00
-   0     1  (0, 0, 0)     2.4169E+00
-   0     1  (0, 1, 0)     2.4169E+00
-   0     2  (0, 1, 0)     2.4169E+00
-   0     2  (-1, 0, 0)    2.4169E+00
-   0     2  (0, 0, 0)     2.4169E+00
+----  ----  ------------  ------------------
+   0     1  (-1, 0, 0)    2.416930006299E+00
+   0     1  (0, 0, 0)     2.416930006299E+00
+   0     1  (0, 1, 0)     2.416930006299E+00
+   0     2  (0, 1, 0)     2.416941297830E+00
+   0     2  (-1, 0, 0)    2.416941297830E+00
+   0     2  (0, 0, 0)     2.416941297830E+00
 """
 
         # don't care about testing Py 2.7 unicode support,
@@ -174,7 +177,6 @@ from    to  to_image
    0     0  (0, -1, 0)  
    0     1  (0, 0, 0)   
    0     1  (-1, 0, 0)  
-   0     1  (-1, 0, 0)  
    1     1  (0, 1, 0)   
    1     1  (0, -1, 0)  
 """
@@ -198,22 +200,20 @@ from    to  to_image
         for idx in mos2_sg_mul.structure.indices_from_symbol("Mo"):
             self.assertEqual(mos2_sg_mul.get_coordination_of_site(idx), 6)
 
-        # TODO: these should be equivalent, investigate this
         mos2_sg_premul = StructureGraph.with_local_env_strategy(self.structure*(3, 3, 1), MinimumDistanceNN())
-        # self.assertTrue(mos2_sg_mul == mos2_sg_premul)
+        print(mos2_sg_premul)
+        print(mos2_sg_mul)
+        from pprint import pprint
+        pprint(mos2_sg_premul.diff(mos2_sg_mul))
+        self.assertTrue(mos2_sg_mul == mos2_sg_premul)
 
         # test 3D Structure
 
         nio_sg = StructureGraph.with_local_env_strategy(self.NiO, MinimumDistanceNN())
-        nio_sg_prim = StructureGraph.with_local_env_strategy(self.NiO.get_primitive_structure(), MinimumDistanceNN())
-
         nio_sg = nio_sg*3
-        nio_sg_prim = nio_sg*3
 
         for n in range(len(nio_sg)):
             self.assertEqual(nio_sg.get_coordination_of_site(n), 6)
-        for n in range(len(nio_sg_prim)):
-            self.assertEqual(nio_sg_prim.get_coordination_of_site(n), 6)
 
     @unittest.skipIf(not (which('neato') and which('fdp')), "graphviz executables not present")
     def test_draw(self):
@@ -226,7 +226,7 @@ from    to  to_image
         # draw MoS2 graph that's been successively multiplied
         mos2_sg_2 = self.mos2_sg * (3, 3, 1)
         mos2_sg_2 = mos2_sg_2 * (3, 3, 1)
-        mos2_sg_2.draw_graph_to_file('MoS2_twice_mul.pdf', algo='neato', hide_image_edges=False)
+        mos2_sg_2.draw_graph_to_file('MoS2_twice_mul.pdf', algo='neato', hide_image_edges=True)
 
         # draw MoS2 graph that's generated from a pre-multiplied Structure
         mos2_sg_premul = StructureGraph.with_local_env_strategy(self.structure*(3, 3, 1), MinimumDistanceNN())

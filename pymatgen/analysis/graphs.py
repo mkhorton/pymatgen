@@ -79,7 +79,7 @@ class StructureGraph(MSONable):
 
     @classmethod
     def with_empty_graph(cls, structure, name="bonds",
-                         edge_weight_name=None,
+                        edge_weight_name=None,
                          edge_weight_units=None):
         """
         Constructor for StructureGraph, returns a StructureGraph
@@ -95,7 +95,7 @@ class StructureGraph(MSONable):
         :return (StructureGraph):
         """
 
-        if edge_weight_name and (not edge_weight_units):
+        if edge_weight_name and (edge_weight_units is None):
             raise ValueError("Please specify units associated "
                              "with your edge weights. Can be "
                              "empty string if arbitrary or "
@@ -126,7 +126,9 @@ class StructureGraph(MSONable):
         :return:
         """
 
-        sg = StructureGraph.with_empty_graph(structure, name="bonds")
+        sg = StructureGraph.with_empty_graph(structure, name="bonds",
+                                             edge_weight_name="weight",
+                                             edge_weight_units="")
 
         for n in range(len(structure)):
             neighbors = strategy.get_nn_info(structure, n)
@@ -525,17 +527,18 @@ class StructureGraph(MSONable):
 
         new_sites = []
         new_graphs = []
-        orig_frac_coords = {}
+
         for v in c_lat:
 
             # create a map of nodes from original graph to its image
             mapping = {n: n + len(new_sites) for n in range(len(self.structure))}
 
-            for site in self.structure:
-                orig_frac_coords[len(new_sites)] = site.frac_coords
+            for idx, site in enumerate(self.structure):
+
                 s = PeriodicSite(site.species_and_occu, site.coords + v,
                                  new_lattice, properties=site.properties,
                                  coords_are_cartesian=True, to_unit_cell=False)
+
                 new_sites.append(s)
 
             new_graphs.append(nx.relabel_nodes(self.graph, mapping, copy=True))
@@ -554,6 +557,7 @@ class StructureGraph(MSONable):
         # for duplicate checking
         edges_inside_supercell = [{u, v} for u, v, d in new_g.edges(data=True)
                                   if d['to_jimage'] == (0, 0, 0)]
+        new_periodic_images = []
 
         orig_lattice = self.structure.lattice
 
@@ -572,12 +576,16 @@ class StructureGraph(MSONable):
             # reduce unnecessary checking
             if to_jimage != (0, 0, 0):
 
+                # get index in original site
+                n_u = u % len(self.structure)
+                n_v = v % len(self.structure)
+
                 # get fractional co-ordinates of where atoms defined
                 # by edge are expected to be, relative to original
                 # lattice (keeping original lattice has
                 # significant benefits)
-                v_image_frac = np.add(orig_frac_coords[v], to_jimage)
-                u_frac = orig_frac_coords[u]
+                v_image_frac = np.add(self.structure[n_v].frac_coords, to_jimage)
+                u_frac = self.structure[n_u].frac_coords
 
                 # using the position of node u as a reference,
                 # get relative Cartesian co-ordinates of where
@@ -593,7 +601,7 @@ class StructureGraph(MSONable):
                 v_expec = new_structure[u].coords + v_rel
 
                 # now search in new structure for these atoms
-                # (these lines could/should be optimized)
+                # query returns (distance, index)
                 v_present = kd_tree.query(v_expec)
                 v_present = v_present[1] if v_present[0] <= tol else None
 
@@ -630,27 +638,55 @@ class StructureGraph(MSONable):
                     # are connected to nodes on opposite side
 
                     v_expec_frac = new_structure.lattice.get_fractional_coords(v_expec)
-                    v_expec_frac = np.subtract(v_expec_frac, to_jimage)
+
+                    # find new to_jimage
+                    # use np.around to fix issues with finite precision leading to incorrect image
+                    v_expec_image = np.around(v_expec_frac, decimals=3)
+                    v_expec_image = v_expec_image - v_expec_image%1
+
+                    v_expec_frac = np.subtract(v_expec_frac, v_expec_image)
                     v_expec = new_structure.lattice.get_cartesian_coords(v_expec_frac)
                     v_present = kd_tree.query(v_expec)
                     v_present = v_present[1] if v_present[0] <= tol else None
 
-                    if v_present is not None and v != v_present:
+                    if v_present is not None:
 
                         new_u = u
                         new_v = v_present
                         new_d = d.copy()
+                        new_to_jimage = tuple(map(int, v_expec_image))
 
                         # normalize direction
                         if new_v < new_u:
                             new_u, new_v = new_v, new_u
-                            new_d['to_jimage'] = tuple(np.multiply(-1, d['to_jimage']).astype(int))
+                            new_to_jimage = tuple(np.multiply(-1, d['to_jimage']).astype(int))
+
+                        new_d['to_jimage'] = new_to_jimage
 
                         edges_to_remove.append((u, v, k))
-                        edges_to_add.append((new_u, new_v, new_d))
+
+                        if (new_u, new_v, new_to_jimage) not in new_periodic_images:
+                            edges_to_add.append((new_u, new_v, new_d))
+                            new_periodic_images.append((new_u, new_v, new_to_jimage))
 
         logger.debug("Removing {} edges, adding {} new edges.".format(len(edges_to_remove),
                                                                       len(edges_to_add)))
+
+        # add/delete marked edges
+        for edges_to_remove in edges_to_remove:
+            new_g.remove_edge(*edges_to_remove)
+        for (u, v, d) in edges_to_add:
+            new_g.add_edge(u, v, **d)
+
+        # normalize directions of edges
+        edges_to_remove = []
+        edges_to_add = []
+        for u, v, k, d in new_g.edges(keys=True, data=True):
+            if v < u:
+                new_v, new_u, new_d = u, v, d.copy()
+                new_d['to_jimage'] = tuple(np.multiply(-1, d['to_jimage']).astype(int))
+                edges_to_remove.append((u,v,k))
+                edges_to_add.append((new_u, new_v, new_d))
 
         # add/delete marked edges
         for edges_to_remove in edges_to_remove:
@@ -665,6 +701,8 @@ class StructureGraph(MSONable):
              "graphs": json_graph.adjacency_data(new_g)}
 
         sg = StructureGraph.from_dict(d)
+
+        sg.sort()
 
         return sg
 
@@ -683,7 +721,7 @@ class StructureGraph(MSONable):
             if edge_weight_units:
                 edge_label += " ({})".format(edge_weight_units)
             header += "  {}".format(edge_label)
-            header_line += "  {}".format("-"*max([10, len(edge_label)]))
+            header_line += "  {}".format("-"*max([18, len(edge_label)]))
         else:
             print_weights = False
 
@@ -696,8 +734,8 @@ class StructureGraph(MSONable):
 
         if print_weights:
             for u, v, data in edges:
-                s += "{:4}  {:4}  {:12}  {:.4E}\n".format(u, v, str(data.get("to_jimage", (0, 0, 0))),
-                                                          data.get("weight", 0))
+                s += "{:4}  {:4}  {:12}  {:.12E}\n".format(u, v, str(data.get("to_jimage", (0, 0, 0))),
+                                                           data.get("weight", 0))
         else:
             for u, v, data in edges:
                 s += "{:4}  {:4}  {:12}\n".format(u, v,
@@ -733,10 +771,13 @@ class StructureGraph(MSONable):
         :return:
         """
 
-        mapping = [s[0] for s in sorted(enumerate(self.structure), key=lambda i: i[1])]
-        mapping = {old_idx:new_idx for new_idx, old_idx in enumerate(mapping)}
+        old_structure = self.structure.copy()
 
+        # sort Structure
         self.structure._sites = sorted(self.structure._sites, key=key, reverse=reverse)
+
+        # apply Structure ordering to graph
+        mapping = {idx:self.structure.index(site) for idx, site in enumerate(old_structure)}
         self.graph = nx.relabel_nodes(self.graph, mapping, copy=True)
 
     def __copy__(self):
@@ -752,20 +793,21 @@ class StructureGraph(MSONable):
         :return (bool):
         """
 
-        # sort to get consistent node labels
-        self_sorted = self.__copy__()
-        self_sorted.sort()
+        # sort for consistent node indices
+        # PeriodicSite should have a proper __hash__() value,
+        # using its frac_coords as a convenient key
+        mapping = {tuple(site.frac_coords):self.structure.index(site) for site in other.structure}
         other_sorted = other.__copy__()
-        other_sorted.sort()
+        other_sorted.sort(key=lambda site: mapping[tuple(site.frac_coords)])
 
         edges = {(u, v, d['to_jimage'])
-                 for u, v, d in self_sorted.graph.edges(keys=False, data=True)}
+                 for u, v, d in self.graph.edges(keys=False, data=True)}
 
         edges_other = {(u, v, d['to_jimage'])
                        for u, v, d in other_sorted.graph.edges(keys=False, data=True)}
 
-        return (self.structure == other.structure) and \
-               (edges == edges_other)
+        return (edges == edges_other) and \
+               (self.structure == other_sorted.structure)
 
     def diff(self, other):
         """
@@ -780,6 +822,13 @@ class StructureGraph(MSONable):
         intersection / size of the union) of the sets of
         edges. This is returned with key 'dist'.
 
+        Important note: all node indices are in terms
+        of the StructureGraph this method is called
+        from, not the 'other' StructureGraph: there
+        is no guarantee the node indices will be the
+        same if the underlying Structures are ordered
+        differently.
+
         :param other: StructureGraph
         :return:
         """
@@ -788,14 +837,15 @@ class StructureGraph(MSONable):
             return ValueError("Meaningless to compare StructureGraphs if "
                               "corresponding Structures are different.")
 
-        # sort to get consistent node labels
-        self_sorted = self.__copy__()
-        self_sorted.sort()
+        # sort for consistent node indices
+        # PeriodicSite should have a proper __hash__() value,
+        # using its frac_coords as a convenient key
+        mapping = {tuple(site.frac_coords):self.structure.index(site) for site in other.structure}
         other_sorted = other.__copy__()
-        other_sorted.sort()
+        other_sorted.sort(key=lambda site: mapping[tuple(site.frac_coords)])
 
         edges = {(u, v, d['to_jimage'])
-                 for u, v, d in self_sorted.graph.edges(keys=False, data=True)}
+                 for u, v, d in self.graph.edges(keys=False, data=True)}
 
         edges_other = {(u, v, d['to_jimage'])
                        for u, v, d in other_sorted.graph.edges(keys=False, data=True)}
