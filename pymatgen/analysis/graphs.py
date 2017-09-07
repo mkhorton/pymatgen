@@ -678,22 +678,6 @@ class StructureGraph(MSONable):
         for (u, v, d) in edges_to_add:
             new_g.add_edge(u, v, **d)
 
-        # normalize directions of edges
-        edges_to_remove = []
-        edges_to_add = []
-        for u, v, k, d in new_g.edges(keys=True, data=True):
-            if v < u:
-                new_v, new_u, new_d = u, v, d.copy()
-                new_d['to_jimage'] = tuple(np.multiply(-1, d['to_jimage']).astype(int))
-                edges_to_remove.append((u,v,k))
-                edges_to_add.append((new_u, new_v, new_d))
-
-        # add/delete marked edges
-        for edges_to_remove in edges_to_remove:
-            new_g.remove_edge(*edges_to_remove)
-        for (u, v, d) in edges_to_add:
-            new_g.add_edge(u, v, **d)
-
         # return new instance of StructureGraph with supercell
         d = {"@module": self.__class__.__module__,
              "@class": self.__class__.__name__,
@@ -779,6 +763,22 @@ class StructureGraph(MSONable):
         # apply Structure ordering to graph
         mapping = {idx:self.structure.index(site) for idx, site in enumerate(old_structure)}
         self.graph = nx.relabel_nodes(self.graph, mapping, copy=True)
+
+        # normalize directions of edges
+        edges_to_remove = []
+        edges_to_add = []
+        for u, v, k, d in self.graph.edges(keys=True, data=True):
+            if v < u:
+                new_v, new_u, new_d = u, v, d.copy()
+                new_d['to_jimage'] = tuple(np.multiply(-1, d['to_jimage']).astype(int))
+                edges_to_remove.append((u,v,k))
+                edges_to_add.append((new_u, new_v, new_d))
+
+        # add/delete marked edges
+        for edges_to_remove in edges_to_remove:
+            self.graph.remove_edge(*edges_to_remove)
+        for (u, v, d) in edges_to_add:
+            self.graph.add_edge(u, v, **d)
 
     def __copy__(self):
         return StructureGraph.from_dict(self.as_dict())

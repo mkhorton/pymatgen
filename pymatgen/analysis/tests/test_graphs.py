@@ -201,10 +201,6 @@ from    to  to_image
             self.assertEqual(mos2_sg_mul.get_coordination_of_site(idx), 6)
 
         mos2_sg_premul = StructureGraph.with_local_env_strategy(self.structure*(3, 3, 1), MinimumDistanceNN())
-        print(mos2_sg_premul)
-        print(mos2_sg_mul)
-        from pprint import pprint
-        pprint(mos2_sg_premul.diff(mos2_sg_mul))
         self.assertTrue(mos2_sg_mul == mos2_sg_premul)
 
         # test 3D Structure
