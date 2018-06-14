@@ -239,6 +239,9 @@ class CollinearMagneticStructureAnalyzer:
 
         if overwrite_magmom_mode != "none":
             structure.add_site_property('magmom', magmoms)
+        else:
+            if "magmom" in structure.site_properties and (threshold or round_magmoms):
+                structure.add_site_property('magmom', magmoms)
 
         if make_primitive:
             structure = structure.get_primitive_structure(use_site_props=True)
