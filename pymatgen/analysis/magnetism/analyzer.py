@@ -237,7 +237,8 @@ class CollinearMagneticStructureAnalyzer:
         # round magmoms, used to smooth out computational data
         magmoms = self._round_magmoms(magmoms, round_magmoms) if round_magmoms else magmoms
 
-        structure.add_site_property('magmom', magmoms)
+        if overwrite_magmom_mode != "none":
+            structure.add_site_property('magmom', magmoms)
 
         if make_primitive:
             structure = structure.get_primitive_structure(use_site_props=True)
@@ -450,13 +451,13 @@ class CollinearMagneticStructureAnalyzer:
         ferrimagnetic)
         """
 
-        if not self.is_collinear:
-            warnings.warn('Detecting ordering in non-collinear structures not yet implemented.')
-            return Ordering.Unknown
-
         if 'magmom' not in self.structure.site_properties:
             # maybe this was a non-spin-polarized calculation, or we've
             # lost the magnetic moment information
+            return Ordering.Unknown
+
+        if not self.is_collinear:
+            warnings.warn('Detecting ordering in non-collinear structures not yet implemented.')
             return Ordering.Unknown
 
         magmoms = self.magmoms
