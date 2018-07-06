@@ -8,6 +8,7 @@ import logging
 from collections import defaultdict
 import copy
 
+import warnings
 import math
 from math import cos
 from math import sin
@@ -27,7 +28,7 @@ from pymatgen.util.coord import find_in_coord_list, pbc_diff
 
 """
 An interface to the excellent spglib library by Atsushi Togo
-(http://spglib.sourceforge.net/) for pymatgen.
+(https://atztogo.github.io/spglib/) for pymatgen.
 
 v1.0 - Now works with both ordered and disordered structure.
 v2.0 - Updated for spglib 1.6.
@@ -97,7 +98,40 @@ class SpacegroupAnalyzer(object):
         self._cell = latt, positions, zs, magmoms
 
         self._space_group_data = spglib.get_symmetry_dataset(
-            self._cell, symprec=self._symprec, angle_tolerance=angle_tolerance)
+            self._cell, symprec=self._symprec, angle_tolerance=angle_tolerance,
+            hall_number=0)
+       
+        # spglib's interface doesn't make it easy to see which alternative
+        # origin or axes choices are available, so we have to create a dict to look-up
+        # this information
+        def get_symmetry_data_grouped_by_int_number():
+            dataset = defaultdict(dict)
+            for i in range(1, 531):
+                d = spglib.get_spacegroup_type(i)
+                dataset[int(d['number'])][d['choice']] = i
+            return dataset
+        
+        self._symmetry_choices = get_symmetry_data_grouped_by_int_number()
+        # store other available choices
+        self._available_choices = list(self._symmetry_choices[int(self._space_group_data['number'])].keys())
+
+        if choice:
+            if choice not in self.available_choices:
+                warnings.warn("Choice not defined for this space-group, using default setting.")
+                choice = ""
+            hall_number = self._symmetry_choices[int(self._space_group_data['number'])][choice]
+            self._space_group_data = spglib.get_symmetry_dataset(
+                self._cell, symprec=self._symprec, angle_tolerance=angle_tolerance,
+                hall_number=hall_number)
+
+    def get_available_choices(self):
+        """
+        Get available choices (settings) for this structure.
+        See this website for more information on choices available
+        in this dataset:
+        http://pmsl.planet.sci.kobe-u.ac.jp/~seto/?page_id=37&lang=en
+        """
+        return self._available_choices
 
     def get_space_group_symbol(self):
         """
