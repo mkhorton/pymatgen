@@ -117,7 +117,7 @@ class SpacegroupAnalyzer(object):
         self._available_choices = list(self._symmetry_choices[int(self._space_group_data['number'])].keys())
 
         if choice:
-            if choice not in self.available_choices:
+            if choice not in self._available_choices:
                 warnings.warn("Choice not defined for this space-group, using default setting.")
                 choice = ""
             hall_number = self._symmetry_choices[int(self._space_group_data['number'])][choice]
