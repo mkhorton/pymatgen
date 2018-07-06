@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 class SpacegroupAnalyzer(object):
     """
     Takes a pymatgen.core.structure.Structure object and a symprec.
-    Uses pyspglib to perform various symmetry finding operations.
+    Uses spglib to perform various symmetry finding operations.
 
     Args:
         structure (Structure/IStructure): Structure to find symmetry
@@ -63,9 +63,10 @@ class SpacegroupAnalyzer(object):
             codes), a looser tolerance of 0.1 (the value used in Materials
             Project) is often needed.
         angle_tolerance (float): Angle tolerance for symmetry finding.
+        choice (str): perform analysis with a specific choice of setting
     """
 
-    def __init__(self, structure, symprec=0.01, angle_tolerance=5):
+    def __init__(self, structure, symprec=0.01, angle_tolerance=5, choice=None):
         self._symprec = symprec
         self._angle_tol = angle_tolerance
         self._structure = structure
