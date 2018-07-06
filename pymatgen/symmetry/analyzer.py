@@ -119,11 +119,11 @@ class SpacegroupAnalyzer(object):
         if choice:
             if choice not in self._available_choices:
                 warnings.warn("Choice not defined for this space-group, using default setting.")
-                choice = ""
-            hall_number = self._symmetry_choices[int(self._space_group_data['number'])][choice]
-            self._space_group_data = spglib.get_symmetry_dataset(
-                self._cell, symprec=self._symprec, angle_tolerance=angle_tolerance,
-                hall_number=hall_number)
+            else:
+                hall_number = self._symmetry_choices[int(self._space_group_data['number'])][choice]
+                self._space_group_data = spglib.get_symmetry_dataset(
+                    self._cell, symprec=self._symprec, angle_tolerance=angle_tolerance,
+                    hall_number=hall_number)
 
     def get_available_choices(self):
         """
