@@ -1,10 +1,13 @@
 **Official docs:** http://www.pymatgen.org
 
-.. image:: https://circleci.com/gh/materialsproject/pymatgen.svg?style=shield&circle-token=:circle-token
+.. image:: https://circleci.com/gh/materialsproject/pymatgen.svg?style=svg
+    :target: https://circleci.com/gh/materialsproject/pymatgen
 
 .. image:: https://ci.appveyor.com/api/projects/status/akdyke5jxg6gps45?svg=true
 
 .. image:: https://anaconda.org/matsci/pymatgen/badges/downloads.svg
+
+.. image:: https://img.shields.io/pypi/dm/pymatgen.svg
 
 .. image:: https://coveralls.io/repos/github/materialsproject/pymatgen/badge.svg?branch=master
 
