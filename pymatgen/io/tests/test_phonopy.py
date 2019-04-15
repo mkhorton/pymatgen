@@ -124,12 +124,6 @@ class GetDisplacedStructuresTest(PymatgenTest):
         self.assertEqual(structures[10].num_sites, 128)
         self.assertArrayAlmostEqual(structures[0].lattice._matrix,
                                     structures[8].lattice._matrix, 8)
-        
-        # test writing output
-        structures = get_displaced_structures(pmg_structure=pmg_s,
-                                              atom_disp=0.01,
-                                              supercell_matrix=supercell_matrix,
-                                              yaml_fname="test.yaml")
 
 
 if __name__ == '__main__':
