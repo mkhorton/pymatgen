@@ -130,7 +130,6 @@ class GetDisplacedStructuresTest(PymatgenTest):
                                               atom_disp=0.01,
                                               supercell_matrix=supercell_matrix,
                                               yaml_fname="test.yaml")
-        self.assertTrue(os.path.exists("test.yaml"))
 
 
 if __name__ == '__main__':
