@@ -7,8 +7,6 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.util.testing import PymatgenTest
 from pymatgen.io.phonopy import *
 
-from monty.tempfile import ScratchDir
-
 if sys.version_info >= (3, 0):
     try:
         from phonopy import Phonopy
@@ -128,12 +126,11 @@ class GetDisplacedStructuresTest(PymatgenTest):
                                     structures[8].lattice._matrix, 8)
         
         # test writing output
-        with ScratchDir("."):
-            structures = get_displaced_structures(pmg_structure=pmg_s,
-                                                  atom_disp=0.01,
-                                                  supercell_matrix=supercell_matrix,
-                                                  yaml_fname="test.yaml")
-            self.assertTrue(os.path.exists("test.yaml"))
+        structures = get_displaced_structures(pmg_structure=pmg_s,
+                                              atom_disp=0.01,
+                                              supercell_matrix=supercell_matrix,
+                                              yaml_fname="test.yaml")
+        self.assertTrue(os.path.exists("test.yaml"))
 
 
 if __name__ == '__main__':
